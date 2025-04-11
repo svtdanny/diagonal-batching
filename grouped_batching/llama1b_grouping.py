@@ -32,7 +32,7 @@ def get_grouped_states(armt_model):
     W_mk_group = [l.W_mk.weight.data.T.contiguous() for l in armt_model.memory_cell.model.model.layers]
     W_mv_group = [l.W_mv.weight.data.T.contiguous() for l in armt_model.memory_cell.model.model.layers]
     W_mb_group = [l.W_mb.weight.data.T.contiguous() for l in armt_model.memory_cell.model.model.layers]
-
+    W_mb_bias_group = [l.W_mb.bias.data.contiguous() for l in armt_model.memory_cell.model.model.layers]
     W_mem_group = [l.W_mem.data.contiguous() for l in armt_model.memory_cell.model.model.layers]
     z_group = [l.z.data.contiguous() for l in armt_model.memory_cell.model.model.layers]
 
@@ -52,7 +52,7 @@ def get_grouped_states(armt_model):
     post_attention_layernorm_group = torch.stack(post_attention_layernorm_group).contiguous()
     
     return (
-        W_mq_group, W_mk_group, W_mv_group, W_mb_group, 
+        W_mq_group, W_mk_group, W_mv_group, W_mb_group, W_mb_bias_group,
         W_mem_group, z_group, 
         q_proj_group, k_proj_group, v_proj_group, o_proj_group, 
         gate_proj_group, up_proj_group, down_proj_group, 
@@ -62,7 +62,7 @@ def get_grouped_states(armt_model):
 
 def make_grouped_layer_from_single_layer(
     grouped_layer,
-    W_mq_group, W_mk_group, W_mv_group, W_mb_group, 
+    W_mq_group, W_mk_group, W_mv_group, W_mb_group, W_mb_bias_group,
     W_mem_group, z_group, 
     q_proj_group, k_proj_group, v_proj_group, o_proj_group, 
     gate_proj_group, up_proj_group, down_proj_group, 
@@ -72,7 +72,7 @@ def make_grouped_layer_from_single_layer(
     grouped_layer.W_mq.forward = get_grouped_gemm_forward(W_mq_group)
     grouped_layer.W_mk.forward = get_grouped_gemm_forward(W_mk_group)
     grouped_layer.W_mv.forward = get_grouped_gemm_forward(W_mv_group)
-    grouped_layer.W_mb.forward = get_naive_grouped_forward(W_mb_group)
+    grouped_layer.W_mb.forward = get_naive_grouped_forward(W_mb_group, torch.stack(W_mb_bias_group)[..., None].to(device))
 
     grouped_layer.W_mem.data = torch.concat(W_mem_group, dim=0).to(device)
     grouped_layer.z.data = torch.concat(z_group, dim=0).to(device)
