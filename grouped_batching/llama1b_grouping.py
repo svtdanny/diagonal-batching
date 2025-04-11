@@ -2,7 +2,7 @@ import torch
 import transformers
 from transformers import AutoModelForCausalLM
 from modeling_amt.language_modeling import AssociativeMemoryCell, AssociativeRecurrentWrapper
-from linear_grouped_forward import get_grouped_gemm_forward, get_naive_grouped_forward
+from grouped_batching.linear_grouped_forward import get_grouped_gemm_forward, get_naive_grouped_forward
 
 def get_llama1b_model(dtype):
     source_model_dualed = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B"

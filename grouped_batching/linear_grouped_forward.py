@@ -1,6 +1,6 @@
 import torch
 import cutlass 
-import cutlass_emit_pytorch_mocked as cutlass_emit_pytorch_mocked
+import grouped_batching.cutlass_emit_pytorch_mocked as cutlass_emit_pytorch_mocked
 
 # allocate output as single tensor. Works for matrix sizes multiplication.
 USE_EFFICIENT_ALLOCATION = False

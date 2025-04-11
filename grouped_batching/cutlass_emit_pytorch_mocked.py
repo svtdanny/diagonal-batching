@@ -90,7 +90,7 @@ from cutlass.backend.library import ApiVersion
 from cutlass.emit import common
 from cutlass.utils.datatypes import is_torch_available
 
-from armt.grouped_batching.template_group_gemm import _PYTORCH_GROUPED_GEMM_CPP_TEMPLATE, _PYTORCH_GROUPED_GEMM_IMPL_TEMPLATE
+from grouped_batching.template_group_gemm import _PYTORCH_GROUPED_GEMM_CPP_TEMPLATE, _PYTORCH_GROUPED_GEMM_IMPL_TEMPLATE
 
 if is_torch_available():
     import torch
