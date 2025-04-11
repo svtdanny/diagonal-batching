@@ -3,6 +3,11 @@ from grouped_batching.llama1b_grouping import wrap_model_with_armt, get_grouped_
 import torch
 from grouped_batching.batching import GroupedBatcher
 from grouped_batching.executor import ArmtGroupedExecutor
+import copy
+
+dtype = torch.bfloat16
+torch.set_default_dtype(dtype)
+torch.set_grad_enabled(False)
 
 config = LlamaConfig(
     vocab_size=5000,
@@ -12,6 +17,7 @@ config = LlamaConfig(
     num_attention_heads=4,
     intermediate_size=256,
     hidden_act="silu",
+    torch_dtype=dtype,
 )
 
 armt_config = dict(
@@ -20,21 +26,24 @@ armt_config = dict(
     d_mem=64,
 )
 
+num_segments = 25
 
-def test_llama_grouping_just_works():
+
+def test_llama_prefill_correctness():
     test_model = LlamaForCausalLM(config)
     test_model.eval()
     
-    dtype = torch.bfloat16
-    torch.set_default_dtype(dtype)
-    torch.set_grad_enabled(False)
-    
+    reference_model = copy.deepcopy(test_model)
+
     armt_model = wrap_model_with_armt(test_model, **armt_config)
     armt_model.to("cuda")
     
+    armt_reference_model = wrap_model_with_armt(reference_model, **armt_config)
+    armt_reference_model.to("cuda")
+    
     grouped_states = get_grouped_states(armt_model)
     grouped_layer = make_grouped_layer_from_single_layer(
-        armt_model.memory_cell.model.model.layers[0], *grouped_states)
+        copy.deepcopy(armt_model.memory_cell.model.model.layers[0]), *grouped_states)
     
     armt_grouped_model, source_model_layers = make_grouped_model_from_naive(armt_model, grouped_layer)
     
@@ -47,9 +56,21 @@ def test_llama_grouping_just_works():
     )
     executor = ArmtGroupedExecutor(armt_grouped_model, grouped_layer, batcher)
     
-    input_ids = torch.randint(0, 5000, (1, 128), dtype=torch.long, device="cuda")
-    output = executor(input_ids)
-    print(output)
+    input_ids = torch.randint(0, 5000, (1, num_segments*armt_config["segment_size"]), dtype=torch.long, device="cuda")
+    
+    reference_output = armt_reference_model.forward(input_ids)
+    
+    output = executor.forward(input_ids)
+    
+    print("\nGot output:\n", output.logits)
+    print("\nReference output:\n", reference_output.logits)
+    
+    print("\nDiff between outputs:\n", output.logits - reference_output.logits)
+
+    nominator = torch.norm(output.logits - reference_output.logits)
+    denominator = torch.norm(reference_output.logits)
+    print(f"\nLogits diff: {nominator}/{denominator}={nominator/denominator}")
+    
     
 if __name__ == "__main__":
-    test_llama_grouping_just_works()
+    test_llama_prefill_correctness()
