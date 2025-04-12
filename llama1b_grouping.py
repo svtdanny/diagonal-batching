@@ -91,6 +91,9 @@ def make_grouped_layer_from_single_layer(
     grouped_layer.layer.input_layernorm.weight.data = input_layernorm_group[:, None, :]
     grouped_layer.layer.post_attention_layernorm.weight.data = post_attention_layernorm_group[:, None, :]
 
+    grouped_layer._grouped_execution = True
+    grouped_layer._skip_associating = True
+
     return grouped_layer
 
 def make_grouped_model_from_naive(armt_model, grouped_layer):
