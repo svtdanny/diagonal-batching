@@ -52,8 +52,8 @@ class ArmtGroupedExecutor(nn.Module):
             #         self.grouped_model_layer.W_mem.data[i].fill_(0)
             #         self.grouped_model_layer.z.data[i].fill_(0)
             #         # layer.zero_mem()
-            self.grouped_model_layer.W_mem.data[need_to_zero_mem].fill_(0)
-            self.grouped_model_layer.z.data[need_to_zero_mem].fill_(0)
+            self.grouped_model_layer.W_mem.data[need_to_zero_mem] = 0
+            self.grouped_model_layer.z.data[need_to_zero_mem] = 0
             
             assoc_batch = self.grouped_model_layer.associate(batch)
             # for i in range(self.grouped_model_layer.W_mem.data.shape[0]):
