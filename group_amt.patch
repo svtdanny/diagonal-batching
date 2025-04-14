@@ -1,0 +1,61 @@
+diff --git a/modeling_amt/language_modeling.py b/modeling_amt/language_modeling.py
+index 9805263..4c400f8 100644
+--- a/modeling_amt/language_modeling.py
++++ b/modeling_amt/language_modeling.py
+@@ -60,6 +60,10 @@ class AssociativeLayerWrapper(torch.nn.Module):
+         self.generate_mode = False
+         self.first_seg = True
+         self.correction = correction
++        
++        self._skip_associating = False
++        self._grouped_execution = False
++        self._first_seg_mask = None
+ 
+     def associate(self, hidden_states):
+ 
+@@ -78,7 +82,7 @@ class AssociativeLayerWrapper(torch.nn.Module):
+         return hidden_states
+     
+     def forward(self, hidden_states, **kwargs):
+-        if not self.first_seg:
++        if not self.first_seg and not self._skip_associating:
+             hidden_states = self.associate(
+                 # self.ln(
+                     hidden_states
+@@ -98,7 +102,20 @@ class AssociativeLayerWrapper(torch.nn.Module):
+ 
+         mk = self.phi(self.W_mk(mem_tokens))
+         new_mv = self.W_mv(mem_tokens) # (bsz, num_mem_tokens, d_model)
+-        if not self.first_seg:
++        if not self._grouped_execution:
++            if not self.first_seg:
++                num = torch.einsum('ijk,ikt->ijt', mk, self.W_mem)
++                denom = torch.einsum("ij,ikj->ik", self.z, mk)[..., None] + 1e-5
++                prev_mv = num / denom
++                if self.correction:
++                    new_info_coef = 1 - denom / (torch.linalg.norm(mk, dim=-1) ** 2 + 1e-5)[..., None]
++                    new_info_coef = torch.clip(new_info_coef, 0, 1).detach()
++                else:
++                    new_info_coef = 1
++            else: 
++                prev_mv = torch.zeros_like(new_mv, device=new_mv.device)
++                new_info_coef = 1
++        else:
+             num = torch.einsum('ijk,ikt->ijt', mk, self.W_mem)
+             denom = torch.einsum("ij,ikj->ik", self.z, mk)[..., None] + 1e-5
+             prev_mv = num / denom
+@@ -106,10 +123,10 @@ class AssociativeLayerWrapper(torch.nn.Module):
+                 new_info_coef = 1 - denom / (torch.linalg.norm(mk, dim=-1) ** 2 + 1e-5)[..., None]
+                 new_info_coef = torch.clip(new_info_coef, 0, 1).detach()
+             else:
+-                new_info_coef = 1
+-        else: 
+-            prev_mv = torch.zeros_like(new_mv, device=new_mv.device)
+-            new_info_coef = 1
++                new_info_coef = torch.ones((self.W_mem.data.shape[0],), device=self.W_mem.data.device)
++            
++            prev_mv[self._first_seg_mask] = 0
++            new_info_coef[self._first_seg_mask] = 1
+         
+         # wandb.log({f"gamma_{self.info['layer']}": new_info_coef.mean(dim=1).item() if isinstance(new_info_coef, torch.Tensor) else 1}, step=self.seg_num)
+         mv = new_mv - prev_mv
