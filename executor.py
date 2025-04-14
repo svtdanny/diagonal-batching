@@ -12,13 +12,18 @@ class ArmtGroupedExecutor(nn.Module):
         self.batcher = batcher
         
     def forward(self, input_ids):
-        segmented_input = self.armt_model.segment(
-            input_ids=input_ids,
-        )
+        is_tensor_input = not isinstance(input_ids, list)
+        if is_tensor_input:
+            input_ids = [input_ids]
+        
+        segmented_input = [self.armt_model.segment(
+            input_ids=ii,
+        ) for ii in input_ids]
 
         # processed_segments = [armt_model.memory_cell.process_input(**s_i) for s_i in segmented_input]
-        processed_segments = segmented_input
-        out_seg_id = self.batcher.push(processed_segments)
+        # processed_segments = segmented_input
+        # out_seg_id = self.batcher.push(processed_segments)
+        out_seg_ids = [self.batcher.push(s_i) for s_i in segmented_input]
         
         batch, segments_info, batch_position_ids, batch_position_embeddings = self.batcher.init_batch(
             # dtype=processed_segments[0]['inputs_embeds'].dtype, device=processed_segments[0]['inputs_embeds'].device
@@ -81,7 +86,9 @@ class ArmtGroupedExecutor(nn.Module):
             # self.batcher.push_out(out.logits[-1:], segments_info)
             self.batcher.push_out(out_logits, segments_info)
             
-        segm_out_logits = self.batcher.get_context_output(out_seg_id)
+        # segm_out_logits = self.batcher.get_context_output(out_seg_id)
+        segm_out_logits = [self.batcher.get_context_output(out_seg_id) for out_seg_id in out_seg_ids]
+        
         # segm_outs = [transformers.modeling_outputs.CausalLMOutputWithPast(
         #     logits=sol
         # ) for sol in segm_out_logits]
@@ -93,8 +100,15 @@ class ArmtGroupedExecutor(nn.Module):
         #     out.append(sol)
         # out = self.armt_model.process_outputs(out)
         
-        out = transformers.modeling_outputs.CausalLMOutputWithPast(
-            logits=torch.cat([sol.logits for sol in segm_out_logits], dim=1),
-        )
+        list_out = []
+        
+        for sols in segm_out_logits:
+            out = transformers.modeling_outputs.CausalLMOutputWithPast(
+                logits=torch.cat([sol.logits for sol in sols], dim=1),
+            )
+            list_out.append(out)
             
-        return out
+        if len(list_out) == 1 and is_tensor_input:
+            return list_out[0]
+        else:
+            return list_out

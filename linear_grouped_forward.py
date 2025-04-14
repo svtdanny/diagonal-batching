@@ -3,7 +3,7 @@ import cutlass
 import grouped_batching.cutlass_emit_pytorch_mocked as cutlass_emit_pytorch_mocked
 
 # allocate output as single tensor. Works for matrix sizes multiplication.
-USE_EFFICIENT_ALLOCATION = False
+USE_EFFICIENT_ALLOCATION = True
 
 def group_gemm_naive(As, Bs):
     return [A @ B for A, B in zip(As, Bs)]
@@ -17,7 +17,7 @@ def get_naive_grouped_forward(Ws, bias=None):
         return res
     return forward
 
-def group_gemm_jit(As, Bs):
+def group_gemm_jit(As, Bs, use_efficient_allocation=False):
     dtype = As[0].dtype
     print(f"GROUPED GEMM dtype: {dtype}")
     plan = cutlass.op.GroupedGemm(element=dtype, element_accumulator=torch.float32, layout=cutlass.LayoutType.RowMajor)
@@ -28,9 +28,9 @@ def group_gemm_jit(As, Bs):
     plan.run(As, Bs, Cs, Ds, print_module=True)
     op = plan.construct()
 
-    if USE_EFFICIENT_ALLOCATION:
-        # print("USE_EFFICIENT_ALLOCATION")
-        import armt.grouped_batching.cutlass_emit_pytorch_mocked as cutlass_emit_pytorch_mocked
+    if use_efficient_allocation or USE_EFFICIENT_ALLOCATION:
+        print("USE_EFFICIENT_ALLOCATION")
+        import grouped_batching.cutlass_emit_pytorch_mocked as cutlass_emit_pytorch_mocked
         grouped_gemm = cutlass_emit_pytorch_mocked.pytorch(op, name='grouped_gemm', cc=plan.cc, sourcedir='out', jit=True)
     else:
         grouped_gemm = cutlass.emit.pytorch(op, name='grouped_gemm', cc=plan.cc, sourcedir='out', jit=True)
