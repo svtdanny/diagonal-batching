@@ -1,19 +1,20 @@
 diff --git a/modeling_amt/language_modeling.py b/modeling_amt/language_modeling.py
-index 9805263..4c400f8 100644
+index 9805263..6366aeb 100644
 --- a/modeling_amt/language_modeling.py
 +++ b/modeling_amt/language_modeling.py
-@@ -60,6 +60,10 @@ class AssociativeLayerWrapper(torch.nn.Module):
+@@ -60,6 +60,11 @@ class AssociativeLayerWrapper(torch.nn.Module):
          self.generate_mode = False
          self.first_seg = True
          self.correction = correction
 +        
 +        self._skip_associating = False
 +        self._grouped_execution = False
-+        self._first_seg_mask = None
++        self._first_seg_mask = "None" # use str placeholder to avoid None indexing
++        self._need_to_update_mem = "None"
  
      def associate(self, hidden_states):
  
-@@ -78,7 +82,7 @@ class AssociativeLayerWrapper(torch.nn.Module):
+@@ -78,7 +83,7 @@ class AssociativeLayerWrapper(torch.nn.Module):
          return hidden_states
      
      def forward(self, hidden_states, **kwargs):
@@ -22,7 +23,7 @@ index 9805263..4c400f8 100644
              hidden_states = self.associate(
                  # self.ln(
                      hidden_states
-@@ -98,7 +102,20 @@ class AssociativeLayerWrapper(torch.nn.Module):
+@@ -98,7 +103,20 @@ class AssociativeLayerWrapper(torch.nn.Module):
  
          mk = self.phi(self.W_mk(mem_tokens))
          new_mv = self.W_mv(mem_tokens) # (bsz, num_mem_tokens, d_model)
@@ -44,7 +45,7 @@ index 9805263..4c400f8 100644
              num = torch.einsum('ijk,ikt->ijt', mk, self.W_mem)
              denom = torch.einsum("ij,ikj->ik", self.z, mk)[..., None] + 1e-5
              prev_mv = num / denom
-@@ -106,10 +123,10 @@ class AssociativeLayerWrapper(torch.nn.Module):
+@@ -106,10 +124,10 @@ class AssociativeLayerWrapper(torch.nn.Module):
                  new_info_coef = 1 - denom / (torch.linalg.norm(mk, dim=-1) ** 2 + 1e-5)[..., None]
                  new_info_coef = torch.clip(new_info_coef, 0, 1).detach()
              else:
@@ -59,3 +60,44 @@ index 9805263..4c400f8 100644
          
          # wandb.log({f"gamma_{self.info['layer']}": new_info_coef.mean(dim=1).item() if isinstance(new_info_coef, torch.Tensor) else 1}, step=self.seg_num)
          mv = new_mv - prev_mv
+@@ -120,12 +138,22 @@ class AssociativeLayerWrapper(torch.nn.Module):
+         # new_info_coef = 1 - denom
+ 
+         mb = torch.sigmoid(self.W_mb(mem_tokens))[..., 0]
+-
+         associations =  torch.einsum('ijk,ijt,ij->ikt', mk, mv, mb) # (bsz, d_mem, d_model)
+-        self.W_mem = self.W_mem + associations
+ 
+-        self.z = self.z + (new_info_coef*mk).sum(dim=1)
+-        # self.z = self.z + (new_info_coef*mb[..., None]*mk).sum(dim=1)
++        if not self._grouped_execution:
++            self.W_mem = self.W_mem + associations
++
++            self.z = self.z + (new_info_coef*mk).sum(dim=1)
++            # self.z = self.z + (new_info_coef*mb[..., None]*mk).sum(dim=1)
++            
++            # print("self.W_mem: ", self.W_mem.sum())
++            # print("self.z: ", self.z)
++        else:
++            # self.W_mem[self._need_to_update_mem] = self.W_mem[self._need_to_update_mem] + associations[self._need_to_update_mem]
++            # self.z[self._need_to_update_mem] = self.z[self._need_to_update_mem] + (new_info_coef*mk).sum(dim=1)[self._need_to_update_mem]
++            self.W_mem[self._need_to_update_mem] += associations[self._need_to_update_mem]
++            self.z[self._need_to_update_mem] += (new_info_coef*mk)[self._need_to_update_mem].sum(dim=1)
++
+         self.seg_num += 1
+ 
+ 
+@@ -332,11 +360,12 @@ class AssociativeRecurrentWrapper(torch.nn.Module):
+         self.memory_cell.zero_mem()
+         for seg_num, segment in enumerate(segmented):
+             seg_len = segment['input_ids'].size(-1)
++            # print(f"seg_len: {seg_len}")
+             cell_out = self.memory_cell(**segment,  
+                                         output_hidden_states=True, 
+                                         use_cache=sliding_window, 
+                                         past_key_values=past_key_values,
+-                                        prev_attn_mask=prev_attn_mask,
++                                        # prev_attn_mask=prev_attn_mask,
+                                         zero_mem=False
+             )
+             if sliding_window:
