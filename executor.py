@@ -38,7 +38,7 @@ class ArmtGroupedExecutor(nn.Module):
             if is_first:
                 is_first = False
             
-            batch, segments_info, batch_position_ids, batch_position_embeddings, need_to_zero_mem = self.batcher.next(
+            batch, segments_info, batch_position_ids, batch_position_embeddings, need_to_zero_mem, need_to_associate_mem = self.batcher.next(
                 batch, segments_info, batch_position_ids, batch_position_embeddings
             )
             if (segments_info == -1).all():
@@ -46,7 +46,8 @@ class ArmtGroupedExecutor(nn.Module):
             
             # print("batch = ", batch)
             
-            self.armt_model._first_seg_mask = need_to_zero_mem
+            self.armt_model.memory_cell.model.model.layers[0]._first_seg_mask = need_to_zero_mem
+            self.armt_model.memory_cell.model.model.layers[0]._need_to_update_mem = segments_info != -1
             
             # need_to_zero_mem = need_to_zero_mem.to('cuda')
 
@@ -64,7 +65,7 @@ class ArmtGroupedExecutor(nn.Module):
             # for i in range(self.grouped_model_layer.W_mem.data.shape[0]):
             #     if not need_to_zero_mem[i].item():
             #         batch[i] += assoc_batch[i]
-            batch[~need_to_zero_mem] += assoc_batch[~need_to_zero_mem]
+            batch[need_to_associate_mem] += assoc_batch[need_to_associate_mem]
             
             # out = self.armt_model.memory_cell.model(inputs_embeds=batch)
             out = self.armt_model.memory_cell.model.model(inputs_embeds=batch, use_cache=False)

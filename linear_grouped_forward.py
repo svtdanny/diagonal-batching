@@ -8,9 +8,26 @@ USE_EFFICIENT_ALLOCATION = True
 def group_gemm_naive(As, Bs):
     return [A @ B for A, B in zip(As, Bs)]
 
+def group_cutlass_naive(As, Bs):
+    plan = cutlass.Gemm(
+        element=As[0].dtype, 
+        element_accumulator=torch.float32, 
+        layout_A=cutlass.LayoutType.RowMajor,
+        layout_B=cutlass.LayoutType.RowMajor,
+        layout_C=cutlass.LayoutType.RowMajor,
+    )
+    Cs = [torch.zeros(a.shape[:-1] + (b.shape[-1],), dtype=a.dtype, device=a.device) for a,b in zip(As, Bs)]
+    Ds = [torch.zeros_like(el) for el in Cs]
+    for A, B, C, D in zip(As, Bs, Cs, Ds):
+        plan.run(A, B, C, D, print_module=False)
+    
+    return Ds
+
+
 def get_naive_grouped_forward(Ws, bias=None):
     def forward(Xs):
         res_list = group_gemm_naive(Xs.unbind(0), Ws)
+        # res_list = group_cutlass_naive(Xs.unbind(0), Ws)
         res = torch.stack(res_list)
         if bias is not None:
             res += bias
@@ -19,8 +36,12 @@ def get_naive_grouped_forward(Ws, bias=None):
 
 def group_gemm_jit(As, Bs, use_efficient_allocation=False):
     dtype = As[0].dtype
-    print(f"GROUPED GEMM dtype: {dtype}")
-    plan = cutlass.op.GroupedGemm(element=dtype, element_accumulator=torch.float32, layout=cutlass.LayoutType.RowMajor)
+    # print(f"GROUPED GEMM dtype: {dtype}")
+    plan = cutlass.op.GroupedGemm(
+        element=dtype, 
+        element_accumulator=torch.float32, 
+        layout=cutlass.LayoutType.RowMajor
+        )
 
     Cs = [torch.zeros(a.shape[:-1] + (b.shape[-1],), dtype=a.dtype, device=a.device) for a,b in zip(As, Bs)]
     Ds = [torch.zeros_like(el) for el in Cs]

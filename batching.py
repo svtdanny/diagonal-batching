@@ -49,11 +49,15 @@ class GroupedBatcher:
             # position_ids[0] = 0
             # positional_embeddings[0][0] = 0
             # positional_embeddings[1][0] = 0
-            need_to_zero_mem = prev_segments_info != segments_info
-            return batch, segments_info, position_ids, positional_embeddings, need_to_zero_mem
+            
+            need_to_associate_mem = (prev_segments_info == segments_info) & (segments_info != -1)
+            need_to_zero_mem = (prev_segments_info != segments_info) & (segments_info != -1)
+            return batch, segments_info, position_ids, positional_embeddings, need_to_zero_mem, need_to_associate_mem
         
         segments_info[0] = self.segment_storage[0][0]
         need_to_zero_mem = prev_segments_info != segments_info
+        need_to_associate_mem = (prev_segments_info == segments_info) & (prev_segments_info != -1)
+        need_to_zero_mem = (prev_segments_info != segments_info) & (prev_segments_info != -1)
         
         processed_input = self.armt_model.memory_cell.process_input(**self.segment_storage[0][1][0])
         batch[0] = processed_input["inputs_embeds"]
@@ -63,7 +67,7 @@ class GroupedBatcher:
         if len(self.segment_storage[0][1]) == 0:
             self.segment_storage = self.segment_storage[1:]
         
-        return batch, segments_info, position_ids, positional_embeddings, need_to_zero_mem
+        return batch, segments_info, position_ids, positional_embeddings, need_to_zero_mem, need_to_associate_mem
     
     def push_out(self, batch_out, segments_info):
         # print("push out segments_info", segments_info)        
