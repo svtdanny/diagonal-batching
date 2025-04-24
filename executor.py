@@ -12,6 +12,10 @@ class ArmtGroupedExecutor(nn.Module):
         self.batcher = batcher
         
     def forward(self, input_ids):
+        # TODO: remove this and implement zero_mem correctly
+        self.armt_model.memory_cell.model.model.layers[0].W_mem.fill_(0)
+        self.armt_model.memory_cell.model.model.layers[0].z.fill_(0)
+        
         is_tensor_input = not isinstance(input_ids, list)
         if is_tensor_input:
             input_ids = [input_ids]
