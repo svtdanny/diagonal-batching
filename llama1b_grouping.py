@@ -3,6 +3,7 @@ import transformers
 from transformers import AutoModelForCausalLM
 from modeling_amt.language_modeling import AssociativeMemoryCell, AssociativeRecurrentWrapper
 from grouped_batching.linear_grouped_forward import get_grouped_gemm_forward, get_naive_grouped_forward
+from grouped_batching.linear_grouped_sliced_forward import get_grouped_gemm_sliced_forward, get_naive_grouped_sliced_forward, get_sliced_rms_norm_forward
 
 def get_llama1b_model(dtype):
     source_model_dualed = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B"
@@ -107,3 +108,43 @@ def make_grouped_model_from_naive(armt_model, grouped_layer):
     
     return armt_model, source_model_layers
 
+
+def make_grouped_sliced_layer_from_single_layer(
+    context,
+    grouped_layer,
+    W_mq_group, W_mk_group, W_mv_group, W_mb_group, W_mb_bias_group,
+    W_mem_group, z_group, 
+    q_proj_group, k_proj_group, v_proj_group, o_proj_group, 
+    gate_proj_group, up_proj_group, down_proj_group, 
+    input_layernorm_group, post_attention_layernorm_group,
+    device='cuda',
+    grouped_fn = get_grouped_gemm_sliced_forward
+):
+    grouped_layer.W_mq.forward = grouped_fn(context, W_mq_group)
+    grouped_layer.W_mk.forward = grouped_fn(context, W_mk_group)
+    grouped_layer.W_mv.forward = grouped_fn(context, W_mv_group)
+    grouped_layer.W_mb.forward = get_naive_grouped_sliced_forward(context, W_mb_group, torch.stack(W_mb_bias_group)[..., None].to(device))
+
+    grouped_layer.W_mem.data = torch.concat(W_mem_group, dim=0).to(device)
+    grouped_layer.z.data = torch.concat(z_group, dim=0).to(device)
+
+    grouped_layer.layer.self_attn.q_proj.forward = grouped_fn(context, q_proj_group)
+    grouped_layer.layer.self_attn.k_proj.forward = grouped_fn(context, k_proj_group)
+    grouped_layer.layer.self_attn.v_proj.forward = grouped_fn(context, v_proj_group)
+    grouped_layer.layer.self_attn.o_proj.forward = grouped_fn(context, o_proj_group)
+
+
+    grouped_layer.layer.mlp.gate_proj.forward = grouped_fn(context, gate_proj_group)
+    grouped_layer.layer.mlp.up_proj.forward = grouped_fn(context, up_proj_group)
+    grouped_layer.layer.mlp.down_proj.forward = grouped_fn(context, down_proj_group)
+
+
+    grouped_layer.layer.input_layernorm.weight.data = input_layernorm_group[:, None, :]
+    grouped_layer.layer.post_attention_layernorm.weight.data = post_attention_layernorm_group[:, None, :]
+    grouped_layer.layer.input_layernorm.forward = get_sliced_rms_norm_forward(grouped_layer.layer.input_layernorm, context)
+    grouped_layer.layer.post_attention_layernorm.forward = get_sliced_rms_norm_forward(grouped_layer.layer.post_attention_layernorm, context)
+    
+    grouped_layer._grouped_execution = True
+    grouped_layer._skip_associating = True
+
+    return grouped_layer
