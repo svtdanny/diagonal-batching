@@ -5,13 +5,14 @@ import transformers
 
 
 class ArmtGroupedExecutor(nn.Module):
-    def __init__(self, armt_model, grouped_model_layer, batcher):
+    def __init__(self, armt_model, grouped_model_layer, batcher, vanilla_armt_model=None):
         super().__init__()
         self.armt_model = armt_model
         self.grouped_model_layer = grouped_model_layer
         self.batcher = batcher
+        self.vanilla_armt_model = vanilla_armt_model
         
-    def forward(self, input_ids):
+    def forward(self, input_ids, keep_mem=False):
         # TODO: remove this and implement zero_mem correctly
         self.armt_model.memory_cell.model.model.layers[0].W_mem.fill_(0)
         self.armt_model.memory_cell.model.model.layers[0].z.fill_(0)
@@ -117,3 +118,65 @@ class ArmtGroupedExecutor(nn.Module):
             return list_out[0]
         else:
             return list_out
+
+    def generate_debug(self, input_ids, attention_mask, **generate_kwargs):
+        self.armt_model.memory_cell.zero_mem()
+        #print(self.armt_model.memory_cell.layers[0].W_mem)
+        #print(self.grouped_model_layer.W_mem[0])
+        #print(self.vanilla_armt_model.memory_cell.layers[0].W_mem)
+        # cut last part of the segment
+        last_segm = input_ids.shape[-1] // (self.batcher.seg_size - self.armt_model.memory_cell.num_mem_tokens) * (self.batcher.seg_size - self.armt_model.memory_cell.num_mem_tokens)
+        prev_ids = input_ids[..., :last_segm]
+        last_ids = input_ids[..., last_segm:]
+        last_attn_mask = attention_mask[..., last_segm:]
+        # TODO: check if memory does not cleared
+        outs = self.forward(prev_ids, keep_mem=True)
+        #print(attention_mask.shape, input_ids.shape)
+        #print(last_ids.shape, last_attn_mask.shape)
+        segmented = self.armt_model.segment(input_ids=last_ids, attention_mask=last_attn_mask)
+        final_segment = segmented[-1]
+        #print(final_segment)
+        # patch memory
+        if self.vanilla_armt_model is not None:
+            #print(self.armt_model.memory_cell.layers[0].W_mem)
+            #print(self.grouped_model_layer.W_mem[0])
+            #print(self.vanilla_armt_model.memory_cell.layers[0].W_mem)
+            self.vanilla_armt_model.memory_cell.memory = self.armt_model.memory_cell.memory
+            for idx in range(len(self.vanilla_armt_model.memory_cell.layers)):
+                self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_model_layer.W_mem[idx]
+                self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_model_layer.z[idx]
+            #print(self.armt_model.memory_cell.layers[0].W_mem)
+            #print(self.grouped_model_layer.W_mem[0])
+            #print(self.vanilla_armt_model.memory_cell.layers[0].W_mem)
+            out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+            self.armt_model.memory_cell.zero_mem()
+            self.vanilla_armt_model.memory_cell.zero_mem()
+        else:
+            out = self.armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+            self.armt_model.memory_cell.zero_mem()
+        return out
+
+    def generate(self, input_ids, attention_mask, **generate_kwargs):
+        self.armt_model.memory_cell.zero_mem()
+        self.vanilla_armt_model.memory_cell.zero_mem()
+        # cut last part of the segment
+        last_segm = input_ids.shape[-1] // (self.batcher.seg_size - self.armt_model.memory_cell.num_mem_tokens) * (self.batcher.seg_size - self.armt_model.memory_cell.num_mem_tokens)
+        prev_ids = input_ids[..., :last_segm]
+        last_ids = input_ids[..., last_segm:]
+        last_attn_mask = attention_mask[..., last_segm:]
+        outs = self.forward(prev_ids, keep_mem=True)
+        segmented = self.armt_model.segment(input_ids=last_ids, attention_mask=last_attn_mask)
+        final_segment = segmented[-1]
+        # patch memory
+        if self.vanilla_armt_model is not None:
+            self.vanilla_armt_model.memory_cell.memory = self.armt_model.memory_cell.memory
+            for idx in range(len(self.vanilla_armt_model.memory_cell.layers)):
+                self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_model_layer.W_mem[idx]
+                self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_model_layer.z[idx]
+            out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+            self.armt_model.memory_cell.zero_mem()
+            self.vanilla_armt_model.memory_cell.zero_mem()
+        else:
+            out = self.armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+            self.armt_model.memory_cell.zero_mem()
+        return out
