@@ -8,9 +8,12 @@ class GroupedLayerContext:
     start_idx: int = 0
     end_idx: int = 0
     is_full: bool = True
+    is_training: bool = False
     
 def zero_grouped_memory(self):
+    self.memory_cell.model.model.layers[0].W_mem.detach_()
     self.memory_cell.model.model.layers[0].W_mem.fill_(0)
+    self.memory_cell.model.model.layers[0].z.detach_()
     self.memory_cell.model.model.layers[0].z.fill_(0)
 
 def associate_with_context(self, context, hidden_states):
@@ -52,6 +55,9 @@ def update_mem_with_context(self, context, mem_tokens):
     mb = torch.sigmoid(self.W_mb(mem_tokens))[..., 0]
     associations =  torch.einsum('ijk,ijt,ij->ikt', mk, mv, mb) # (bsz, d_mem, d_model)
 
+    if context.is_training:
+        self.W_mem = self.W_mem.clone()
+        self.z = self.z.clone()
     self.W_mem[context.start_idx:context.end_idx, ...] += associations
     self.z[context.start_idx:context.end_idx, ...] += (new_info_coef*mk).sum(dim=1)
     
@@ -81,13 +87,15 @@ class FastGroupedArmtExecutor:
         
         for i in range(self.n_layers + len(segments) - 1):
             if i < len(segments):
+                # print("insert segment shape: ", segments[i].shape)
                 # add new segment until have one 
                 grouped_input.insert(0, segments[i])
                 
             if i < self.n_layers:
                 # compute before end_idx+=1 to skip first segment association
                 grouped_input_tensor = torch.stack(grouped_input)
-                if i > 0:
+                if i > 0 and grouped_input_tensor.shape[0] > 1:
+                    # print("associate_with_context")
                     grouped_input_tensor[:-1, ...] += associate_with_context(self.grouped_layer, self.context, grouped_input_tensor[:-1, ...])
                 
                 # allow more weights to be computed

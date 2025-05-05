@@ -104,3 +104,62 @@ class GroupedLinear(nn.Module):
         if self.bias is not None:
             out += self.bias
         return out
+
+
+class GroupedSlicedLinear(nn.Module):
+    def __init__(self, context, n_layers, in_features, out_features, dtype=torch.bfloat16, bias=False, device='cuda', use_naive_implementation=False):
+        super().__init__()
+        assert device == 'cuda'
+        self.wg = nn.ParameterList([
+            nn.Parameter(torch.randn(in_features, out_features, dtype=dtype, device=device))
+            for _ in range(n_layers)
+        ])
+        self.bias = nn.Parameter(torch.zeros((n_layers, 1, out_features), dtype=dtype, device=device)) if bias else None
+        self.use_naive_implementation = use_naive_implementation
+        self.context = context
+        
+    @classmethod
+    def from_torch_layers(cls, context, torch_layers: list[nn.Linear], device='cuda', use_naive_implementation=False):
+        layer = cls(
+            context,
+            len(torch_layers), 
+            torch_layers[0].in_features, 
+            torch_layers[0].out_features, 
+            dtype=torch_layers[0].weight.dtype, 
+            bias=torch_layers[0].bias is not None, 
+            device=device,
+            use_naive_implementation=use_naive_implementation
+        )
+        for i, l in enumerate(torch_layers):
+            layer.wg[i].data.copy_(l.weight.data.T)
+            
+            if l.bias is not None:
+                # manually expand dimensions for correct forward broadcast
+                layer.bias.data.copy_(l.bias.data[None, None, :])
+        return layer
+
+
+    def forward(self, x):
+        x = x.type(self.wg[0].dtype).contiguous()
+        if self.context.is_full:
+            # print(f"FULL: {self.use_naive_implementation=} {self.context=} {x.shape=} {x=},\n\n {self.wg=}")
+            if self.use_naive_implementation:
+                out = grouped_gemm_naive_autograd_fn(x, *self.wg)
+            else:
+                out = grouped_gemm_autograd_fn(x, *self.wg)
+        else:
+            w_use = self.wg[self.context.start_idx:self.context.end_idx]
+            # print(f"PARTIAL: {self.context=} {self.use_naive_implementation=} {x.shape=} {x=},\n\n {w_use=}")
+            if self.use_naive_implementation:
+                out = grouped_gemm_naive_autograd_fn(x, *w_use)
+            else:
+                out = grouped_gemm_autograd_fn(x, *w_use)
+        
+        if self.bias is not None:
+            if self.context.is_full:
+                out += self.bias
+            else:
+                out += self.bias[self.context.start_idx:self.context.end_idx]
+        
+        # print(f"MULT FINISHED: {out.shape=}")
+        return out.contiguous()
