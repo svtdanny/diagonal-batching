@@ -22,6 +22,7 @@ def associate_with_context(self, context, hidden_states):
     
     mq = self.phi(self.W_mq(hidden_states)) # (bsz, seq_len, 2d_mem * nu)
 
+    # print(mq.dtype, self.W_mem.dtype)
     num = torch.einsum('ijk,ikt->ijt', mq, self.W_mem[context.start_idx:context.end_idx, ...])
     denom = torch.einsum("ik,ijk->ij", self.z[context.start_idx:context.end_idx, ...], mq)[..., None] + 1e-5
     hidden_states = num / denom
@@ -63,8 +64,9 @@ def update_mem_with_context(self, context, mem_tokens):
     
     self.seg_num += 1
 
-class FastGroupedArmtExecutor:
+class FastGroupedArmtExecutor(torch.nn.Module):
     def __init__(self, model, grouped_layer, context, n_layers, vanilla_armt_model=None):
+        super().__init__()
         self.armt_model = model
         self.grouped_layer = grouped_layer
         self.context = context
@@ -137,34 +139,22 @@ class FastGroupedArmtExecutor:
     def generate(self, input_ids, attention_mask, seg_size, **generate_kwargs):
         self.armt_model.memory_cell.zero_mem()
         self.vanilla_armt_model.memory_cell.zero_mem()
-        #self.armt_model.memory_cell.zero_mem()
-        #print(self.armt_model.memory_cell.layers[0].W_mem)
-        #print(self.grouped_layer.W_mem[0])
-        #print(self.vanilla_armt_model.memory_cell.layers[0].W_mem)
         # cut last part of the segment
         last_segm = input_ids.shape[-1] // (seg_size - self.armt_model.memory_cell.num_mem_tokens) * (seg_size - self.armt_model.memory_cell.num_mem_tokens)
         prev_ids = input_ids[..., :last_segm]
         last_ids = input_ids[..., last_segm:]
         last_attn_mask = attention_mask[..., last_segm:]
-        # TODO: check if memory does not cleared
+        prev_ids = prev_ids.contiguous()
         outs = self.forward(prev_ids)#, keep_mem=True)
-        #print(attention_mask.shape, input_ids.shape)
-        #print(last_ids.shape, last_attn_mask.shape)
         segmented = self.armt_model.segment(input_ids=last_ids, attention_mask=last_attn_mask)
         final_segment = segmented[-1]
-        #print(final_segment)
         # patch memory
         if self.vanilla_armt_model is not None:
-            #print(self.armt_model.memory_cell.layers[0].W_mem)
-            #print(self.grouped_layer.W_mem[0])
-            #print(self.vanilla_armt_model.memory_cell.layers[0].W_mem)
             self.vanilla_armt_model.memory_cell.memory = self.armt_model.memory_cell.memory
             for idx in range(len(self.vanilla_armt_model.memory_cell.layers)):
-                self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_layer.W_mem[idx]
-                self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_layer.z[idx]
-            #print(self.armt_model.memory_cell.layers[0].W_mem)
-            #print(self.grouped_layer.W_mem[0])
-            #print(self.vanilla_armt_model.memory_cell.layers[0].W_mem)
+                self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_layer.W_mem[idx].unsqueeze(0)
+                self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_layer.z[idx].unsqueeze(0)
+                self.vanilla_armt_model.memory_cell.layers[idx].first_seg = False
             out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
             self.armt_model.memory_cell.zero_mem()
             self.vanilla_armt_model.memory_cell.zero_mem()
@@ -172,3 +162,17 @@ class FastGroupedArmtExecutor:
             out = self.armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
             self.armt_model.memory_cell.zero_mem()
         return out
+
+    def to(self, device):
+        self.armt_model.to(device)
+        self.grouped_layer.to(device)
+        if self.vanilla_armt_model is not None:
+            self.vanilla_armt_model.to(device)
+
+    def eval(self):
+        self.armt_model.eval()
+        self.grouped_layer.eval()
+
+    def train(self):
+        self.armt_model.train()
+        self.grouped_layer.train()

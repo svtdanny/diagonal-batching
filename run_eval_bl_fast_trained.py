@@ -117,21 +117,21 @@ torch.autograd.set_detect_anomaly(True)
 from grouped_batching.llama1b_grouping_autograd import make_grouped_training_layer_from_single_layer, make_grouped_sliced_training_layer_from_single_layer
 dtype = torch.bfloat16
 device = "cuda"
-original_model = original_model.to(dtype)
+original_model_copy = copy.deepcopy(original_model.to(dtype))
 grouped_context = GroupedLayerContext()
 grouped_context.is_training = True
 # grouped_states = get_grouped_states(armt_model)
 grouped_layer = make_grouped_sliced_training_layer_from_single_layer(
-    grouped_context, copy.deepcopy(original_model.memory_cell.model.model.layers[0]), original_model.memory_cell.model.model.layers
+    grouped_context, copy.deepcopy(original_model_copy.memory_cell.model.model.layers[0]), original_model_copy.memory_cell.model.model.layers
 )
 grouped_layer = grouped_layer.to(dtype)
 grouped_layer = grouped_layer.to(device)
-armt_grouped_model, source_model_layers = make_grouped_model_from_naive(original_model, grouped_layer)
+armt_grouped_model, source_model_layers = make_grouped_model_from_naive(original_model_copy, grouped_layer)
 armt_grouped_model.to(device)
 executor = FastGroupedArmtExecutor(
-    armt_grouped_model, 
-    grouped_layer, 
-    grouped_context, 
+    armt_grouped_model,
+    grouped_layer,
+    grouped_context,
     16,#model_config.num_hidden_layers, 
 )
 ### ONLY FOR FAST LATENCY VERSION
@@ -148,10 +148,11 @@ armt_grouped_model.memory_cell.model.model(inputs_embeds=segments_input[i:j], us
 update_mem_with_context(grouped_layer, grouped_context, segments_input[i:j])
 
 grouped_context.is_training = False
-model_path = "/home/jovyan/gkuzmin/rmt_it/optimized_armt/runs/test/babilong_multitask/unsloth/Llama-3.2-1B-Instruct/lr_3e-04_d64_linear_adamw_wd1e-03_8x1024_mem16_bs64_bptt--1_from_cpt_0-1_lora_ct-v3/grouped/run_1"
-
-executor.grouped_layer.load_state_dict(torch.load(model_path + "/grouped_layer.pth", weights_only=True))
-executor.armt_model.load_state_dict(torch.load(model_path + "/armt_model.pth", weights_only=True))
+load_trained_weights = False
+if load_trained_weights:
+    model_path = "/home/jovyan/gkuzmin/rmt_it/optimized_armt/runs/test/babilong_multitask/unsloth/Llama-3.2-1B-Instruct/lr_3e-04_d64_linear_adamw_wd1e-03_8x1024_mem16_bs64_bptt--1_from_cpt_0-1_lora_ct-v3/grouped_v2/run_1"
+    executor.grouped_layer.load_state_dict(torch.load(model_path + "/grouped_layer.pth", weights_only=True))
+    executor.armt_model.load_state_dict(torch.load(model_path + "/armt_model.pth", weights_only=True))
 
 # executor.vanilla_armt_model = copy.deepcopy(executor.armt_model)
 executor.vanilla_armt_model = copy.deepcopy(original_model)
@@ -186,8 +187,8 @@ import pandas as pd
 
 
 
-tasks = ["qa1"]
-split_names = ["2k", "4k", "8k"]
+tasks = ["qa1", "qa2"]
+split_names = ["2k", "4k", "8k", "16k"]
 dataset_name = "RMT-team/babilong"
 results_folder = "./test_res"
 model_name = "unsloth/Llama-3.2-1B-Instruct"
@@ -199,7 +200,7 @@ api_url = False
 
 
 model = executor
-model_cpt = "fast_executor_mem_patch_armt-1b-it-v2"
+model_cpt = "DEBUG_trained_fast_executor_v2_mem_patch_armt-1b-it-v2"
 model.name_or_path = "custom_rmt"
 model.device = "cuda"
 
@@ -301,8 +302,6 @@ for task in tqdm(tasks, desc='tasks'):
                         if "executor" in model_cpt:
                             #print(input_ids.shape)
                             model_inputs["seg_size"] = segment_size
-                            print(model_inputs)
-                            print(model_inputs['input_ids'].shape)
                             model_inputs['input_ids'] = model_inputs['input_ids'].contiguous()
                             model_inputs['attention_mask'] = model_inputs['attention_mask'].contiguous()
                             #print(smth)
