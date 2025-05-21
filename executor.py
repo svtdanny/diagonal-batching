@@ -173,6 +173,7 @@ class ArmtGroupedExecutor(nn.Module):
             for idx in range(len(self.vanilla_armt_model.memory_cell.layers)):
                 self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_model_layer.W_mem[idx]
                 self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_model_layer.z[idx]
+                self.vanilla_armt_model.memory_cell.layers[idx].first_seg = False
             out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
             self.armt_model.memory_cell.zero_mem()
             self.vanilla_armt_model.memory_cell.zero_mem()

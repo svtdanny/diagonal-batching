@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-
+import time
 import torch
 import transformers
 
@@ -137,31 +137,44 @@ class FastGroupedArmtExecutor(torch.nn.Module):
         )
 
     def generate(self, input_ids, attention_mask, seg_size, **generate_kwargs):
-        self.armt_model.memory_cell.zero_mem()
         self.vanilla_armt_model.memory_cell.zero_mem()
-        # cut last part of the segment
-        last_segm = input_ids.shape[-1] // (seg_size - self.armt_model.memory_cell.num_mem_tokens) * (seg_size - self.armt_model.memory_cell.num_mem_tokens)
-        prev_ids = input_ids[..., :last_segm]
-        last_ids = input_ids[..., last_segm:]
-        last_attn_mask = attention_mask[..., last_segm:]
-        prev_ids = prev_ids.contiguous()
-        outs = self.forward(prev_ids)#, keep_mem=True)
-        segmented = self.armt_model.segment(input_ids=last_ids, attention_mask=last_attn_mask)
-        final_segment = segmented[-1]
-        # patch memory
-        if self.vanilla_armt_model is not None:
-            self.vanilla_armt_model.memory_cell.memory = self.armt_model.memory_cell.memory
-            for idx in range(len(self.vanilla_armt_model.memory_cell.layers)):
-                self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_layer.W_mem[idx].unsqueeze(0)
-                self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_layer.z[idx].unsqueeze(0)
-                self.vanilla_armt_model.memory_cell.layers[idx].first_seg = False
-            out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
-            self.armt_model.memory_cell.zero_mem()
-            self.vanilla_armt_model.memory_cell.zero_mem()
+        if input_ids.shape[-1] > seg_size - self.armt_model.memory_cell.num_mem_tokens:
+            # cut last part of the segment
+            last_segm = input_ids.shape[-1] // (seg_size - self.armt_model.memory_cell.num_mem_tokens) * (seg_size - self.armt_model.memory_cell.num_mem_tokens)
+            prev_ids = input_ids[..., :last_segm]
+            last_ids = input_ids[..., last_segm:]
+            last_attn_mask = attention_mask[..., last_segm:]
+            #prev_ids = prev_ids.contiguous()
+            outs = self.forward(prev_ids)#, keep_mem=True)
+            segmented = self.armt_model.segment(input_ids=last_ids, attention_mask=last_attn_mask)
+            final_segment = segmented[-1]
+            # patch memory
+            if self.vanilla_armt_model is not None:
+                time_start = time.time()
+                self.vanilla_armt_model.memory_cell.memory = self.armt_model.memory_cell.memory
+                for idx in range(len(self.vanilla_armt_model.memory_cell.layers)):
+                    self.vanilla_armt_model.memory_cell.layers[idx].W_mem = self.grouped_layer.W_mem[idx].unsqueeze(0)
+                    self.vanilla_armt_model.memory_cell.layers[idx].z = self.grouped_layer.z[idx].unsqueeze(0)
+                    self.vanilla_armt_model.memory_cell.layers[idx].first_seg = False
+                time_end = time.time()
+                out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+                self.vanilla_armt_model.memory_cell.zero_mem()
+            else:
+                out = self.armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+                self.armt_model.memory_cell.zero_mem()
+            copy_time = time_end - time_start
         else:
-            out = self.armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
-            self.armt_model.memory_cell.zero_mem()
-        return out
+            segmented = self.armt_model.segment(input_ids=input_ids, attention_mask=attention_mask)
+            final_segment = segmented[-1]
+            # patch memory
+            if self.vanilla_armt_model is not None:
+                out = self.vanilla_armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+                self.vanilla_armt_model.memory_cell.zero_mem()
+            else:
+                out = self.armt_model.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
+                self.armt_model.memory_cell.zero_mem()
+            copy_time = 0
+        return out, copy_time
 
     def to(self, device):
         self.armt_model.to(device)
