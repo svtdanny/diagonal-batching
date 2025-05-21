@@ -72,7 +72,7 @@ class FastGroupedArmtExecutor:
 
         self.grouped_layer.generate_mode = True
 
-    def forward(self, input_ids): #, segments):
+    def forward(self, input_ids, skip_concat=False): #, segments):
         self.context.is_full = False
         self.context.start_idx = 0
         self.context.end_idx = 0
@@ -124,6 +124,9 @@ class FastGroupedArmtExecutor:
                 self.context.start_idx += 1
                 self.context.is_full = False
               
+        if skip_concat:
+            return segment_outputs
+        
         # return segment_outputs  
         output = torch.cat(segment_outputs, dim=0)
         # return output
