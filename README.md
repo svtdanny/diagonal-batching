@@ -25,7 +25,6 @@ File ... pdf
 
 ## 4. Usage example
 
-`benchmark_llama1b.py` - script for running one forward \
 `usage_llama1b_training.py` - simple training example \
 `usage_llama1b.ipynb` - interactive comparision of torch model, armt implementation and grouped batching algorithm \
 <!-- `....` - generate example  -->
@@ -33,4 +32,5 @@ File ... pdf
 ## 5. Scripts to reproduce results from paper (graphs, tables)
 `paper_experiments/measure_flops.ipynb` - Individual operation scaling \
 `paper_experiments/llamas_batch_scaling.ipynb` - Llama scaling with batch size \
+`paper_experiments/ideal_grouped_scaling.ipynb` - reproduce Ideal/Even Load baseline in paper \
 `usage_llama1b.ipynb` - Performance comparision of torch model, armt implementation and grouped batching algorithm
