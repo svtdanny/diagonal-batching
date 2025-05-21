@@ -1,0 +1,8 @@
+cuda-bindings==12.8.0
+cuda-python==12.8.0
+flash_attn==2.7.4.post1
+numpy==1.26.4
+nvidia-cutlass==3.6.0.0
+pandas==2.2.3
+torch==2.5.1+cu121
+transformers==4.51.3
