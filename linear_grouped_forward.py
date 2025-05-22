@@ -34,13 +34,15 @@ def get_naive_grouped_forward(Ws, bias=None):
         return res
     return forward
 
-def group_gemm_jit(As, Bs, use_efficient_allocation=False):
+def group_gemm_jit(As, Bs, use_efficient_allocation=False, Bs_transposed=False):
     dtype = As[0].dtype
     # print(f"GROUPED GEMM dtype: {dtype}")
     plan = cutlass.op.GroupedGemm(
         element=dtype, 
         element_accumulator=torch.float32, 
-        layout=cutlass.LayoutType.RowMajor
+        layout_A = cutlass.LayoutType.RowMajor,
+        layout_B = cutlass.LayoutType.RowMajor if not Bs_transposed else cutlass.LayoutType.ColumnMajor,
+        layout_C = cutlass.LayoutType.RowMajor,
         )
 
     Cs = [torch.zeros(a.shape[:-1] + (b.shape[-1],), dtype=a.dtype, device=a.device) for a,b in zip(As, Bs)]
