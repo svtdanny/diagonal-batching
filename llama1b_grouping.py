@@ -11,7 +11,7 @@ def get_llama1b_model(dtype):
                                              ,torch_dtype=dtype)
     return source_model_dualed
 
-def wrap_model_with_armt(source_model, segment_size, num_mem_tokens, d_mem=64):
+def wrap_model_with_armt(source_model, segment_size, num_mem_tokens, d_mem=64, layers_attr='model.layers'):
     mem_cell_cls = AssociativeMemoryCell
     rec_wrap_cls = AssociativeRecurrentWrapper
 
@@ -23,7 +23,7 @@ def wrap_model_with_armt(source_model, segment_size, num_mem_tokens, d_mem=64):
         mem_cell_args['d_mem'] = d_mem
 
 
-    cell = mem_cell_cls(**mem_cell_args, wrap_pos=False, layers_attr="model.layers")
+    cell = mem_cell_cls(**mem_cell_args, wrap_pos=False, layers_attr=layers_attr)
     armt_model = rec_wrap_cls(cell, segment_size=segment_size, k2=-1)
     
     return armt_model
