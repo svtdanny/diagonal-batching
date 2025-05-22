@@ -148,3 +148,39 @@ def make_grouped_sliced_layer_from_single_layer(
     grouped_layer._skip_associating = True
 
     return grouped_layer
+
+def make_naive_model_from_grouped(armt_model, grouped_layer):
+    """Simply patch all layers from grouped_layer back into original ARMT"""
+    def transform_sliced_layer(orig, sliced, idx):
+        orig.weight.data.copy_(sliced.wg[idx].data.T)
+        if orig.bias is not None:
+            orig.bias.data.copy_(sliced.bias[idx][0].data)
+    for idx, l in enumerate(armt_model.memory_cell.model.model.layers):
+        # copy W_* weights
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].W_mq, grouped_layer.W_mq, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].W_mk, grouped_layer.W_mk, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].W_mv, grouped_layer.W_mv, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].W_mb, grouped_layer.W_mb, idx)
+        # mem weights
+        armt_model.memory_cell.model.model.layers[idx].W_mem.data.copy_(grouped_layer.W_mem[idx].data)
+        armt_model.memory_cell.model.model.layers[idx].z.data.copy_(grouped_layer.z[idx].data)
+        # attn
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.self_attn.q_proj,
+                               grouped_layer.layer.self_attn.q_proj, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.self_attn.k_proj,
+                               grouped_layer.layer.self_attn.k_proj, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.self_attn.v_proj,
+                               grouped_layer.layer.self_attn.v_proj, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.self_attn.o_proj,
+                               grouped_layer.layer.self_attn.o_proj, idx)
+        # mlp
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.mlp.gate_proj,
+                               grouped_layer.layer.mlp.gate_proj, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.mlp.up_proj,
+                               grouped_layer.layer.mlp.up_proj, idx)
+        transform_sliced_layer(armt_model.memory_cell.model.model.layers[idx].layer.mlp.down_proj,
+                               grouped_layer.layer.mlp.down_proj, idx)
+        # layer norms
+        armt_model.memory_cell.model.model.layers[idx].layer.input_layernorm.weight.data.copy_(grouped_layer.layer.input_layernorm.weight[idx][0].data.T)
+        armt_model.memory_cell.model.model.layers[idx].layer.post_attention_layernorm.weight.data.copy_(grouped_layer.layer.post_attention_layernorm.weight[idx][0].data.T)
+    return armt_model
