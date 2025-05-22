@@ -4,25 +4,56 @@ import torch
 from grouped_batching.batching import GroupedBatcher
 from grouped_batching.executor import ArmtGroupedExecutor
 import copy
+import cutlass
 
 dtype = torch.bfloat16
 torch.set_default_dtype(dtype)
 torch.set_grad_enabled(False)
 
+def get_manual_linear_forward(layer):
+    def forward(x):
+        # print(f"{x} @ {layer.weight.T} + {layer.bias} = ...")
+        o = x @ layer.weight.T
+        if layer.bias is not None:
+            o += layer.bias
+        return o
+    return forward
+
+def get_cublas_linear_forward(layer):
+    def forward(x):
+        # print(f"{x} @ {layer.weight.T} + {layer.bias} = ...")
+        tC = torch.zeros(x.shape[:-1] + (layer.weight.shape[-2],), device=x.device, dtype=x.dtype)
+        tD = torch.zeros(x.shape[:-1] + (layer.weight.shape[-2],), device=x.device, dtype=x.dtype)
+        plan = cutlass.Gemm(
+            element=x.dtype, 
+            element_accumulator=torch.float32,
+            layout_A=cutlass.LayoutType.RowMajor,
+            layout_B=cutlass.LayoutType.ColumnMajor,
+            layout_C=cutlass.LayoutType.RowMajor,
+        )
+        plan.run(x, layer.weight.T, tC, tD, print_module=False)
+                
+        if layer.bias is not None:
+            tD += layer.bias
+        return tD
+    return forward
+
 config = LlamaConfig(
     vocab_size=5000,
-    hidden_size=128,
-    num_key_value_heads=4,
-    num_hidden_layers=4,
-    num_attention_heads=4,
-    intermediate_size=256,
+    hidden_size=2048,
+    num_key_value_heads=8,
+    num_hidden_layers=8,
+    num_attention_heads=8,
+    intermediate_size=4096,
     hidden_act="silu",
     torch_dtype=dtype,
 )
 
 armt_config = dict(
-    segment_size=128,
-    num_mem_tokens=16,
+    segment_size=256,
+    num_mem_tokens=64,
+    # segment_size=32,
+    # num_mem_tokens=16,
     d_mem=64,
 )
 
@@ -54,6 +85,16 @@ def test_llama_layers_correctness():
     grouped_states = get_grouped_states(armt_model)
     grouped_layer = make_grouped_layer_from_single_layer(
         copy.deepcopy(armt_model.memory_cell.model.model.layers[0]), *grouped_states)
+    
+    # for name, module in armt_model.named_modules():
+    #     if isinstance(module, torch.nn.Linear):
+    #         # print(name, type(module))
+    #         if "W_mb" in name:
+    #             print(f"Skipping {name}")
+    #             module.forward = get_manual_linear_forward(module)
+    #         else:
+    #             # module.forward = get_manual_linear_forward(module)
+    #             module.forward = get_cublas_linear_forward(module)
     
     armt_grouped_model, source_model_layers = make_grouped_model_from_naive(armt_model, grouped_layer)
     
@@ -87,7 +128,6 @@ def test_llama_layers_correctness():
     mem_tokens_batch = torch.rand((config.num_hidden_layers, armt_config["num_mem_tokens"], config.hidden_size), device="cuda", dtype=dtype)
     is_fs = False
     # grouped_layer.first_seg = is_fs
-    grouped_layer._grouped_execution = True
     if is_fs:
         grouped_layer._first_seg_mask = torch.ones(config.num_hidden_layers, device="cuda", dtype=torch.bool)
     else:
@@ -131,12 +171,33 @@ def test_llama_layers_correctness():
     
     grouped_layer.first_seg = is_fs
     grouped_layer.generate_mode = is_gm
+    if is_fs:
+        grouped_layer._first_seg_mask = torch.ones(config.num_hidden_layers, device="cuda", dtype=torch.bool)
+    else:
+        grouped_layer._first_seg_mask = torch.zeros(config.num_hidden_layers, device="cuda", dtype=torch.bool)
     
     o_g = grouped_layer.forward(segment_batch, position_ids=position_ids_batch)
     
     for l in range(config.num_hidden_layers):
         s = segment_batch[l:l+1]
         p = position_ids_batch[l:l+1]
+        
+        grouped_layer.W_mem.data.copy_(W_batch)
+        grouped_layer.z.data.copy_(z_batch)
+        
+        source_model_layers[l].W_mem.copy_(W_batch[l:l+1])
+        source_model_layers[l].z.copy_(z_batch[l:l+1])
+        
+        for name, module in source_model_layers[l].layer.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                # print(name, type(module))
+                if "W_mb" in name:
+                    print(f"Skipping {name}")
+                    module.forward = get_manual_linear_forward(module)
+                else:
+                    # module.forward = get_manual_linear_forward(module)
+                    module.forward = get_cublas_linear_forward(module)
+
         
         source_model_layers[l].first_seg = is_fs
         source_model_layers[l].generate_mode = is_gm
