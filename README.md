@@ -34,3 +34,14 @@ File ... pdf
 `paper_experiments/llamas_batch_scaling.ipynb` - Llama scaling with batch size \
 `paper_experiments/ideal_grouped_scaling.ipynb` - reproduce Ideal/Even Load baseline in paper \
 `usage_llama1b.ipynb` - Performance comparision of torch model, armt implementation and grouped batching algorithm
+
+
+## 6. How to reproduce BABILong evaluation and training
+
+1. Install additional dependencies - clone BABILong repo and prepare data: \
+    a. `git clone https://github.com/booydar/babilong.git` \
+    b. `unzip ./babilong/data/tasks_1-20_v1-2.zip`
+2. `run_eval_bl_fast_trained.py` - example of evaluation on BABILong for ARMT and ARMT with Diagonal batching (trained on BABILong train set)
+3. `calc_babilong_scores.ipynb` - extract and plot tables with BABILong scores and inference time for ARMT and ARMT with Diagonal batching
+4. `train_babilong_example.ipynb` - example of finetuning ARMT with Diagonal batching on BABILong
+5. `run_eval_bl_fast_trained.py` - example of evaluation on BABILong for ARMT with Diagonal batching after additional finetuning
