@@ -50,4 +50,4 @@ Next all commands provided from it as base path
 2. `run_eval_bl_fast_trained.py` - example of evaluation on BABILong for ARMT and ARMT with Diagonal batching (trained on BABILong train set)
 3. `calc_babilong_scores.ipynb` - extract and plot tables with BABILong scores and inference time for ARMT and ARMT with Diagonal batching
 4. `train_babilong_example.ipynb` - example of finetuning ARMT with Diagonal batching on BABILong
-5. `run_eval_bl_fast_trained.py` - example of evaluation on BABILong for ARMT with Diagonal batching after additional finetuning
+5. `run_eval_bl_fast_finetuned.py` - example of evaluation on BABILong for ARMT with Diagonal batching after additional finetuning
