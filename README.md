@@ -4,7 +4,7 @@
 
 See file `paper_supplemental_materials.pdf`
 
-## 2. Implemenration for diagonal batching
+## 2. Implementation of diagonal batching
 
 See `grouped_batching` directory.   
 Next all commands provided from it as base path  
