@@ -1,7 +1,7 @@
 import sys
 
-sys.path.append("/home/jovyan/sivtsov/associative-recurrent-memory-transformer")
-sys.path.append("/home/jovyan/sivtsov/armt")
+sys.path.append("./associative-recurrent-memory-transformer")
+sys.path.append("..")
 
 import copy
 import torch
