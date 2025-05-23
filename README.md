@@ -2,9 +2,15 @@
 
 ## 1. Appendix section 
 
-File ... pdf
+See file `paper_supplemental_materials.pdf`
 
-## 2. Setup
+## 2. Implemenration for diagonal batching
+
+See `grouped_batching` directory.   
+Next all commands provided from it as base path  
+(make `cd grouped_batching` from current directory)
+
+## 3. Code setup
 
 1. install dependencies from `requirements.txt` file
 2. Setup repository from ARMT paper: \
@@ -14,29 +20,29 @@ File ... pdf
     d. `git apply ../group_amt.patch`
 
 
-## 3. Code of diagonal-batching method
+## 4. Code of diagonal-batching method
 
 1. Inference Diagonal batching operation -> `linear_grouped_sliced_forward.py` and `linear_grouped_forward.py`
 2. Training Diagonal batching operation -> `linear_grouped_training.py`
 3. Cutlass with optimized output -> `cutlass_emit_pytorch_mocked.py`
 4. FastExecutor -> `fast_executor.py`
-5. AmortizedExecutor -> `executor.py`
+5. UniversalGroupedExecutor (sutable for llama, gpt models) -> `universal_executor.py`
+6. AmortizedExecutor -> `executor.py`
 
-
-## 4. Usage example
+## 5. Usage example
 
 `usage_llama1b_training.py` - simple training example \
 `usage_llama1b.ipynb` - interactive comparision of torch model, armt implementation and grouped batching algorithm \
-<!-- `....` - generate example  -->
+`usage_universal_executor.ipynb` - example of using UniversalGroupedExecutor with both llama and gpt2 model
 
-## 5. Scripts to reproduce results from paper (graphs, tables)
+## 6. Scripts to reproduce results from paper (graphs, tables)
 `paper_experiments/measure_flops.ipynb` - Individual operation scaling \
 `paper_experiments/llamas_batch_scaling.ipynb` - Llama scaling with batch size \
 `paper_experiments/ideal_grouped_scaling.ipynb` - reproduce Ideal/Even Load baseline in paper \
 `usage_llama1b.ipynb` - Performance comparision of torch model, armt implementation and grouped batching algorithm
 
 
-## 6. How to reproduce BABILong evaluation and training
+## 7. How to reproduce BABILong evaluation and training
 
 1. Install additional dependencies - clone BABILong repo and prepare data: \
     a. `git clone https://github.com/booydar/babilong.git` \
