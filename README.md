@@ -3,10 +3,18 @@
 Diagonal batching is a scheduling scheme that unlocks parallelism
 across segments in RMTs while preserving exact recurrence. This approach eliminates the sequential constraint, enabling efficient GPU inference even for single long-context inputs.
 
+## Inference Cost Analysis
+
+<div style="display: flex; justify-content: space-between;">
+    <img src="images/inference_cost_latency.png" width="48%" alt="Inference Cost Latency"/>
+    <img src="images/inference_cost_memory.png" width="48%" alt="Inference Cost Memory"/>
+</div>
+
+
 Currently, we are refactoring our code. Last stable version with code we measured performance on in paper is available under tag `v0.0.1-paper`.
 Note, that current master branch can have outdated usage examples. 
 
-TODO:
+#### TODO:
 1. Refactor main implementation to make code clean and user frendly
 2. Refactor generation - make it cleaner
 3. Add best available checkpoint for ARMT models
