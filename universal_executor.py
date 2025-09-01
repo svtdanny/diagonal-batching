@@ -214,11 +214,11 @@ class UniversalGroupedExecutor(torch.nn.Module):
             self.memory_cell.zero_mem()
             
         # Handle large inputs
-        if input_ids.shape[-1] > seg_size - self.grouped_layer.num_mem_tokens:
+        if input_ids.shape[-1] > seg_size:
             # Cut last part of the segment
-            last_segm = input_ids.shape[-1] // (seg_size - self.grouped_layer.num_mem_tokens) * (seg_size - self.grouped_layer.num_mem_tokens)
+            last_segm = input_ids.shape[-1] // (seg_size) * (seg_size)
             if last_segm == input_ids.shape[-1]:
-                last_segm -= (seg_size - self.grouped_layer.num_mem_tokens)
+                last_segm -= (seg_size)
             prev_ids = input_ids[..., :last_segm]
             last_ids = input_ids[..., last_segm:]
             last_attn_mask = attention_mask[..., last_segm:] if attention_mask is not None else None
@@ -249,14 +249,15 @@ class UniversalGroupedExecutor(torch.nn.Module):
                         vanilla_memory_cell.layers[idx].first_seg = False
                     
                     time_end = time.time()
-                    out = vanilla_memory_cell.generate(**final_segment, attention_mask=attention_mask, zero_mem=False, **generate_kwargs)
+                    # print(f"final_segment: {final_segment}, attention_mask: {attention_mask}, generate_kwargs: {generate_kwargs}")
+                    out = vanilla_memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
                     vanilla_memory_cell.zero_mem()
                     copy_time = time_end - time_start
                     return out, copy_time
             
             # Use memory cell for generation
             if hasattr(self.memory_cell, 'generate'):
-                out = self.memory_cell.generate(**final_segment, attention_mask=attention_mask, zero_mem=False, **generate_kwargs)
+                out = self.memory_cell.generate(**final_segment, zero_mem=False, **generate_kwargs)
                 if hasattr(self.memory_cell, 'zero_mem'):
                     self.memory_cell.zero_mem()
                 return out, 0

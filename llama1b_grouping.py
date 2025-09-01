@@ -1,7 +1,7 @@
 import torch
 import transformers
 from transformers import AutoModelForCausalLM
-from modeling_amt.language_modeling_old import AssociativeMemoryCell, AssociativeRecurrentWrapper
+from modeling_amt.language_modeling import AssociativeMemoryCell, AssociativeRecurrentWrapper
 from grouped_batching.linear_grouped_forward import get_grouped_gemm_forward, get_naive_grouped_forward
 from grouped_batching.linear_grouped_sliced_forward import get_grouped_gemm_sliced_forward, get_naive_grouped_sliced_forward, get_sliced_rms_norm_forward
 
